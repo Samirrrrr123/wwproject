@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Workers и Canvas</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .section {
+            background: white;
+            border-radius: 10px;
+            padding: 25px;
+            margin-bottom: 25px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        h2 {
+            color: #333;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 5px;
+        }
+        .nav-controls {
+            display: flex;
+            gap: 15px;
+            margin: 20px 0;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.3s, transform 0.2s;
+        }
+        button:hover {
+            background: #5a67d8;
+            transform: translateY(-2px);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .canvas-container {
+            text-align: center;
+            margin: 20px 0;
+        }
+        canvas {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            background: #f8f9fa;
+            cursor: crosshair;
+        }
+        .worker-controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+        input {
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 16px;
+            flex: 1;
+            min-width: 200px;
+        }
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .status {
+            margin-top: 15px;
+            padding: 12px;
+            border-radius: 6px;
+            background: #f0f9ff;
+            border-left: 4px solid #3498db;
+            color: #2c3e50;
+            display: none;
+        }
+        .status.success {
+            background: #d4edda;
+            border-color: #28a745;
+            color: #155724;
+        }
+        .status.error {
+            background: #f8d7da;
+            border-color: #dc3545;
+            color: #721c24;
+        }
+        .status.warning {
+            background: #fff3cd;
+            border-color: #ffc107;
+            color: #856404;
+        }
+        .history-list {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .history-item {
+            padding: 8px 12px;
+            margin-bottom: 5px;
+            background: white;
+            border-radius: 4px;
+            border-left: 3px solid #667eea;
+        }
+        .controls-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        .color-picker {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .color-btn {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            border: 2px solid white;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .color-btn.active {
+            border-color: #333;
+            transform: scale(1.1);
+        }
+        .result {
+            font-size: 20px;
+            font-weight: bold;
+            color: #667eea;
+            margin-top: 10px;
+            text-align: center;
+            min-height: 36px;
+        }
+        .current-page {
+            font-size: 18px;
+            color: #333;
+            margin: 15px 0;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            text-align: center;
+        }
+        .page {
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+        .page.active {
+            display: block;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Web Workers, Canvas и History API</h1>
+
+        <div class="section">
+            <h2>1. История браузера</h2>
+            <div class="current-page">
+                Текущая страница: <span id="currentPage">Главная</span>
+            </div>
+            <div class="nav-controls">
+                <button id="prevBtn" disabled>← Назад</button>
+                <button id="nextBtn" disabled>Вперед →</button>
+                <button id="homeBtn">Главная</button>
+                <button id="canvasBtn">Canvas</button>
+                <button id="workerBtn">Web Worker</button>
+            </div>
+            <div class="history-list" id="historyList">
+                <!-- История будет здесь -->
+            </div>
+            <div class="status" id="historyStatus"></div>
+        </div>
+
+        <div class="page active" id="mainPage">
+            <div class="section">
+                <h2>Главная страница</h2>
+                <p>Добро пожаловать! Это демонстрация Web Workers, Canvas API и History API.</p>
+                <p>Используйте кнопки выше для навигации между страницами.</p>
+                <p>История переходов отображается ниже.</p>
+            </div>
+        </div>
+
+        <div class="page" id="canvasPage">
+            <div class="section">
+                <h2>2. Canvas Графика и Анимация</h2>
+                <div class="controls-row">
+                    <div class="color-picker">
+                        <div class="color-btn active" style="background: #667eea;" data-color="#667eea"></div>
+                        <div class="color-btn" style="background: #e74c3c;" data-color="#e74c3c"></div>
+                        <div class="color-btn" style="background: #2ecc71;" data-color="#2ecc71"></div>
+                        <div class="color-btn" style="background: #f39c12;" data-color="#f39c12"></div>
+                        <div class="color-btn" style="background: #9b59b6;" data-color="#9b59b6"></div>
+                    </div>
+                    <button id="clearBtn">Очистить</button>
+                    <button id="animateBtn">Запустить анимацию</button>
+                    <button id="stopBtn">Остановить анимацию</button>
+                </div>
+                <div class="canvas-container">
+                    <canvas id="myCanvas" width="800" height="400"></canvas>
+                </div>
+                <p>Кликни и тащи мышку для рисования. Кнопка "Запустить анимацию" запускает шарики.</p>
+                <div class="status" id="canvasStatus"></div>
+            </div>
+        </div>
+
+        <div class="page" id="workerPage">
+            <div class="section">
+                <h2>3. Web Worker для вычислений</h2>
+                <p>Воркер вычисляет факториал и простые числа в фоне, не блокируя интерфейс.</p>
+                
+                <div class="worker-controls">
+                    <input type="number" id="numberInput" placeholder="Введите число (до 10000)" min="1" max="10000" value="1000">
+                    <button id="calculateBtn">Вычислить в основном потоке</button>
+                    <button id="workerBtnCalc">Вычислить в Web Worker</button>
+                    <button id="primeBtn">Найти простые числа</button>
+                </div>
+
+                <div class="result" id="result">Результат: -</div>
+                <div class="result" id="timeResult">Время: -</div>
+
+                <div class="status" id="workerStatus"></div>
+
+                <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 6px;">
+                    <p><strong>Проверка блокировки интерфейса:</strong></p>
+                    <p>Попробуй ввести большое число (например, 20000) и нажми "Вычислить в основном потоке" - интерфейс зависнет.</p>
+                    <p>Теперь нажми "Вычислить в Web Worker" - интерфейс останется отзывчивым.</p>
+                    <button id="uiTestBtn">Тест отзывчивости (нажми во время вычислений)</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('myCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let currentPage = 'mainPage';
+        let historyStack = ['mainPage'];
+        let historyIndex = 0;
+        let isAnimating = false;
+        let animationId;
+        let balls = [];
+        let currentColor = '#667eea';
+        let worker;
+
+        function showStatus(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.className = 'status ' + type;
+            element.style.display = 'block';
+            
+            if (type !== 'error') {
+                setTimeout(() => {
+                    element.style.display = 'none';
+                }, 3000);
+            }
+        }
+
+        function navigateTo(pageId) {
+            document.querySelectorAll('.page').forEach(page => {
+                page.classList.remove('active');
+            });
+            
+            document.getElementById(pageId).classList.add('active');
+            
+            if (pageId !== historyStack[historyIndex]) {
+                historyStack = historyStack.slice(0, historyIndex + 1);
+                historyStack.push(pageId);
+                historyIndex++;
+            }
+            
+            updateHistoryUI();
+            updateNavButtons();
+            
+            document.getElementById('currentPage').textContent = 
+                pageId === 'mainPage' ? 'Главная' : 
+                pageId === 'canvasPage' ? 'Canvas' : 'Web Worker';
+            
+            showStatus('historyStatus', `Перешли на: ${pageId}`, 'success');
+            
+            if (pageId === 'canvasPage') {
+                startDrawing();
+            } else if (pageId === 'workerPage' && !worker) {
+                initWorker();
+            }
+        }
+
+        function updateHistoryUI() {
+            const historyList = document.getElementById('historyList');
+            historyList.innerHTML = '';
+            
+            historyStack.forEach((page, index) => {
+                const pageName = page === 'mainPage' ? 'Главная' : 
+                               page === 'canvasPage' ? 'Canvas' : 'Web Worker';
+                
+                const item = document.createElement('div');
+                item.className = 'history-item';
+                item.textContent = `${index + 1}. ${pageName}`;
+                
+                if (index === historyIndex) {
+                    item.style.background = '#e3f2fd';
+                    item.style.fontWeight = 'bold';
+                }
+                
+                historyList.appendChild(item);
+            });
+        }
+
+        function updateNavButtons() {
+            document.getElementById('prevBtn').disabled = historyIndex === 0;
+            document.getElementById('nextBtn').disabled = historyIndex === historyStack.length - 1;
+        }
+
+        function goBack() {
+            if (historyIndex > 0) {
+                historyIndex--;
+                navigateTo(historyStack[historyIndex]);
+            }
+        }
+
+        function goForward() {
+            if (historyIndex < historyStack.length - 1) {
+                historyIndex++;
+                navigateTo(historyStack[historyIndex]);
+            }
+        }
+
+        document.getElementById('prevBtn').addEventListener('click', goBack);
+        document.getElementById('nextBtn').addEventListener('click', goForward);
+        
+        document.getElementById('homeBtn').addEventListener('click', () => navigateTo('mainPage'));
+        document.getElementById('canvasBtn').addEventListener('click', () => navigateTo('canvasPage'));
+        document.getElementById('workerBtn').addEventListener('click', () => navigateTo('workerPage'));
+
+        document.querySelectorAll('.color-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                currentColor = this.getAttribute('data-color');
+            });
+        });
+
+        let isDrawing = false;
+        let lastX = 0;
+        let lastY = 0;
+
+        function startDrawing() {
+            canvas.addEventListener('mousedown', startDraw);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseup', stopDraw);
+            canvas.addEventListener('mouseout', stopDraw);
+        }
+
+        function startDraw(e) {
+            isDrawing = true;
+            [lastX, lastY] = [e.offsetX, e.offsetY];
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+            
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.lineTo(e.offsetX, e.offsetY);
+            ctx.strokeStyle = currentColor;
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            ctx.stroke();
+            
+            [lastX, lastY] = [e.offsetX, e.offsetY];
+        }
+
+        function stopDraw() {
+            isDrawing = false;
+        }
+
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            balls = [];
+            showStatus('canvasStatus', 'Холст очищен', 'success');
+        });
+
+        document.getElementById('animateBtn').addEventListener('click', () => {
+            if (isAnimating) return;
+            
+            isAnimating = true;
+            
+            for (let i = 0; i < 20; i++) {
+                balls.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    radius: Math.random() * 15 + 5,
+                    color: ['#667eea', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6'][Math.floor(Math.random() * 5)],
+                    dx: (Math.random() - 0.5) * 4,
+                    dy: (Math.random() - 0.5) * 4
+                });
+            }
+            
+            animate();
+            showStatus('canvasStatus', 'Анимация запущена', 'success');
+        });
+
+        document.getElementById('stopBtn').addEventListener('click', () => {
+            isAnimating = false;
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+            }
+            showStatus('canvasStatus', 'Анимация остановлена', 'warning');
+        });
+
+        function animate() {
+            if (!isAnimating) return;
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            balls.forEach(ball => {
+                ctx.beginPath();
+                ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+                ctx.fillStyle = ball.color;
+                ctx.fill();
+                
+                ball.x += ball.dx;
+                ball.y += ball.dy;
+                
+                if (ball.x + ball.radius > canvas.width || ball.x - ball.radius < 0) {
+                    ball.dx = -ball.dx;
+                }
+                if (ball.y + ball.radius > canvas.height || ball.y - ball.radius < 0) {
+                    ball.dy = -ball.dy;
+                }
+            });
+            
+            animationId = requestAnimationFrame(animate);
+        }
+
+        function initWorker() {
+            if (window.Worker) {
+                worker = new Worker('worker.js');
+                
+                worker.onmessage = function(e) {
+                    const data = e.data;
+                    
+                    if (data.type === 'factorial') {
+                        document.getElementById('result').textContent = `Факториал ${data.input} = ${data.result}`;
+                        document.getElementById('timeResult').textContent = `Вычислено за: ${data.time} мс`;
+                        showStatus('workerStatus', 'Вычисления завершены в Web Worker!', 'success');
+                    } else if (data.type === 'primes') {
+                        document.getElementById('result').textContent = `Простые числа до ${data.input}: ${data.result.length} чисел`;
+                        document.getElementById('timeResult').textContent = `Найдено за: ${data.time} мс`;
+                        showStatus('workerStatus', `Найдено ${data.result.length} простых чисел`, 'success');
+                    }
+                };
+                
+                worker.onerror = function(error) {
+                    showStatus('workerStatus', `Ошибка воркера: ${error.message}`, 'error');
+                };
+                
+                showStatus('workerStatus', 'Web Worker инициализирован', 'success');
+            } else {
+                showStatus('workerStatus', 'Web Workers не поддерживаются в этом браузере', 'error');
+            }
+        }
+
+        function calculateInMainThread() {
+            const input = document.getElementById('numberInput').value;
+            const num = parseInt(input);
+            
+            if (isNaN(num) || num < 1) {
+                showStatus('workerStatus', 'Введите корректное число', 'error');
+                return;
+            }
+            
+            const startTime = performance.now();
+            
+            let result = 1n;
+            for (let i = 2; i <= num; i++) {
+                result *= BigInt(i);
+            }
+            
+            const endTime = performance.now();
+            const time = endTime - startTime;
+            
+            document.getElementById('result').textContent = `Факториал ${num} = ${result.toString().substring(0, 50)}...`;
+            document.getElementById('timeResult').textContent = `Вычислено за: ${time.toFixed(2)} мс`;
+            showStatus('workerStatus', 'Вычисления завершены в основном потоке', 'success');
+        }
+
+        document.getElementById('calculateBtn').addEventListener('click', calculateInMainThread);
+
+        document.getElementById('workerBtnCalc').addEventListener('click', () => {
+            if (!worker) {
+                showStatus('workerStatus', 'Web Worker не инициализирован', 'error');
+                return;
+            }
+            
+            const input = document.getElementById('numberInput').value;
+            const num = parseInt(input);
+            
+            if (isNaN(num) || num < 1) {
+                showStatus('workerStatus', 'Введите корректное число', 'error');
+                return;
+            }
+            
+            showStatus('workerStatus', 'Вычисления запущены в Web Worker...', 'warning');
+            document.getElementById('result').textContent = 'Вычисление...';
+            document.getElementById('timeResult').textContent = 'Время: -';
+            
+            worker.postMessage({ type: 'factorial', number: num });
+        });
+
+        document.getElementById('primeBtn').addEventListener('click', () => {
+            if (!worker) {
+                showStatus('workerStatus', 'Web Worker не инициализирован', 'error');
+                return;
+            }
+            
+            const input = document.getElementById('numberInput').value;
+            const num = parseInt(input);
+            
+            if (isNaN(num) || num < 1) {
+                showStatus('workerStatus', 'Введите корректное число', 'error');
+                return;
+            }
+            
+            showStatus('workerStatus', 'Поиск простых чисел...', 'warning');
+            document.getElementById('result').textContent = 'Поиск...';
+            document.getElementById('timeResult').textContent = 'Время: -';
+            
+            worker.postMessage({ type: 'primes', number: num });
+        });
+
+        document.getElementById('uiTestBtn').addEventListener('click', () => {
+            alert('Интерфейс отзывчивый!');
+        });
+
+        window.addEventListener('load', () => {
+            updateHistoryUI();
+            updateNavButtons();
+            
+            if (window.Worker) {
+                initWorker();
+            }
+        });
+    </script>
+</body>
+</html>
